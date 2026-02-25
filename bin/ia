@@ -1,0 +1,11 @@
+#!/bin/zsh
+
+for FILE in "$@"
+do
+  if [ -e "$FILE" ]; then
+    open -a "iA Writer" "$FILE"
+  else
+    touch "$FILE"
+    open -a "iA Writer" "$FILE"
+  fi
+done
