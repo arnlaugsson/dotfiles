@@ -12,7 +12,6 @@ cask_args appdir: '/Applications'
 
 tap 'sandsower/tap'
 tap 'warrensbox/tap'
-tap 'oddur/gnosis'
 
 # ── Shell and CLI ──────────────────────────────────────────────────
 brew 'autojump'                   # jump to frequent directories
@@ -42,7 +41,6 @@ brew 'pyenv'
 
 # ── Apps ───────────────────────────────────────────────────────────
 cask 'gcloud-cli'
-cask 'gnosis'
 cask 'kitty'                      # the worksetup depends on this
 cask 'tfswitch'
 
@@ -50,4 +48,3 @@ cask 'tfswitch'
 #   fonts          — avoid reinstalling powerline/nerd fonts on a new machine
 #   adoptopenjdk   — deprecated cask (now Temurin), no JDK in use
 #   docker-desktop — replaced by colima (see Containers above)
-#   gnosis         — removed; AI code-review app, never launched
