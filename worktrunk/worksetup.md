@@ -207,12 +207,17 @@ tmux kill-session -t <full-session-name>     # tmux won't clean up by itself
   `close_tab` on `Cmd+W` and `close_os_window` on `Cmd+Shift+W`. Both are
   tab-wide or wider, and every workstream here is a pane in a *single* tab — so
   either one ends every workstream at once, behind a "close this tab?" prompt
-  that sounds far smaller than what it does. `Cmd+W` is remapped to close the
-  focused pane, and the tab-wide close is left unbound; a tab closes on its own
-  when its last pane goes. `Cmd+W` asks first if a command is running in the
-  pane and closes silently at a bare shell prompt. `Ctrl+Shift+W` is the same
-  pane close without the prompt. `Cmd+Q` still quits kitty, which is harmless —
-  it ends the view, not the tmux sessions.
+  that sounds far smaller than what it does. So `Cmd+W` closes the focused pane
+  and `Cmd+Shift+W` does nothing; a tab still closes on its own once its last
+  pane goes. `Cmd+W` asks first when a command is running in the pane and
+  closes silently at a bare shell prompt; `Ctrl+Shift+W` is the same close
+  without the prompt. `Cmd+Q` still quits kitty — harmless, since that ends the
+  view, not the tmux sessions.
+- **Killing a chord takes `discard_event`, not a bare `map`.** A bare
+  `map cmd+shift+w` *unbinds* it, which hands the keypress to the program
+  instead of eating it — and the shell then echoes `9;10u`, the tail of kitty's
+  keyboard-protocol escape for that chord (`ESC [ 119 ; 10 u`: 119 is `w`, 10 is
+  cmd+shift). `discard_event` swallows it properly.
 - **`fn+F5`/`F6` inherit the current directory only outside tmux.** Inside a
   tmux session kitty can only see tmux's own directory. Doesn't matter in
   practice — you run `wts` next, which `cd`s you anyway.
