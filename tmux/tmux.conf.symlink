@@ -1,0 +1,80 @@
+# ═══════════════════════════════════════════════════════════════════
+#  tmux — persistence layer for the parallel-agent worksetup
+#  Docs: ~/.config/worksetup.md
+#
+#  One tmux session per git worktree/branch, created by `wts`.
+#  kitty owns the on-screen layout (splits + Cmd+Shift+Enter zoom);
+#  tmux owns persistence — sessions survive closing kitty entirely.
+#
+#  Prefix stays Ctrl-b.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Core ───────────────────────────────────────────────────────────
+set  -g mouse on
+set  -g base-index 1              # windows count from 1
+setw -g pane-base-index 1
+set  -g renumber-windows on
+set  -g history-limit 50000       # long agent transcripts
+set  -g focus-events on
+set -sg escape-time 0             # no ESC lag inside Claude / vim
+set  -g display-time 2000
+
+# True colour + kitty graphics passthrough. Without allow-passthrough,
+# tmux swallows kitty's image protocol and inline images render as junk.
+set  -g default-terminal "tmux-256color"
+set -as terminal-features ",xterm-kitty:RGB"
+set  -g allow-passthrough on
+
+# Let kitty's tab title show which session this pane holds.
+set  -g set-titles on
+set  -g set-titles-string "#{?#{@short},#{@short},#S}"
+
+# ── Panes ──────────────────────────────────────────────────────────
+bind h select-pane -L
+bind j select-pane -D
+bind k select-pane -U
+bind l select-pane -R
+
+bind -r H resize-pane -L 5
+bind -r J resize-pane -D 5
+bind -r K resize-pane -U 5
+bind -r L resize-pane -R 5
+
+# Splits inherit the worktree directory (tmux defaults to ~).
+bind '"' split-window -v -c "#{pane_current_path}"
+bind %   split-window -h -c "#{pane_current_path}"
+bind c   new-window      -c "#{pane_current_path}"
+
+# ── Reload ─────────────────────────────────────────────────────────
+bind r source-file ~/.tmux.conf \; display "tmux.conf reloaded"
+
+# ── Status bar ─────────────────────────────────────────────────────
+# Session names are full branch names (long). @short holds the ticket
+# id, set by `wts`; sessions made by hand fall back to the full name.
+set -g status-style        "bg=colour236,fg=colour246"
+set -g status-left-length  24
+set -g status-left         "#[bg=colour39,fg=colour236,bold] #{?#{@short},#{@short},#S} #[default] "
+set -g status-right-length 70
+set -g status-right        "#[fg=colour244]#{=-60:session_name} "
+set -g window-status-current-style "fg=colour39,bold"
+
+# ── Plugins (tpm) ──────────────────────────────────────────────────
+# Reboot survival. resurrect restores session/window/pane structure,
+# names, layouts and working directories — NOT running processes. Your
+# agents will not come back mid-run; `claude --continue` in the restored
+# worktree picks the conversation up again.
+set -g @plugin 'tmux-plugins/tpm'
+set -g @plugin 'tmux-plugins/tmux-resurrect'
+set -g @plugin 'tmux-plugins/tmux-continuum'
+
+set -g @resurrect-capture-pane-contents 'on'   # keep scrollback
+set -g @continuum-restore   'on'               # restore when tmux next starts
+set -g @continuum-save-interval '15'           # minutes
+
+# resurrect does not save custom session options, so wts's @short label is lost
+# on restore. resurrect has no post-restore hook, so use tmux's own: this fires
+# for restored sessions and for any session made outside wts.
+set-hook -g session-created 'run-shell "$HOME/.dotfiles/bin/tmux-session-label"'
+
+# Keep this the LAST line in the file.
+run '~/.tmux/plugins/tpm/tpm'
