@@ -3,7 +3,7 @@
 My macOS setup: zsh, git, kitty, tmux, and a worktree-per-branch workflow for
 running several coding agents side by side.
 
-Forked from [holman/dotfiles](https://github.com/holman/dotfiles). The topical
+Based on [holman/dotfiles](https://github.com/holman/dotfiles). The topical
 layout and the bootstrap scripts are his.
 
 ## Install
