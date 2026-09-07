@@ -85,7 +85,7 @@ triage, one agent full-screen when you actually engage with it.
 | Cycle panes | Cmd+[ / Cmd+] |
 | Move the pane itself | Cmd+Shift+← ↑ ↓ → |
 | Close the focused pane | Cmd+W *or* Ctrl+Shift+W |
-| New tab / close tab / tab N | Cmd+T / Cmd+Shift+W / Cmd+1..9 |
+| New tab / tab N | Cmd+T / Cmd+1..9 |
 | Next / previous tab | Cmd+Shift+] / Cmd+Shift+[ |
 | Reload kitty config | Ctrl+Cmd+, |
 
@@ -203,12 +203,16 @@ tmux kill-session -t <full-session-name>     # tmux won't clean up by itself
   below" for iTerm2 parity. The override works because it's the last definition
   in `kitty.conf` — if you ever reorder that file, you'll start closing panes
   instead of splitting them. Closing a pane is `Cmd+W`.
-- **The close bindings are shifted one level down from kitty's defaults.**
-  Stock kitty is `Cmd+W` = close the tab and `Cmd+Shift+W` = close the whole OS
-  window (every tab, every pane, behind a single confirmation dialog). We move
-  both down: `Cmd+W` closes just the focused pane, `Cmd+Shift+W` closes the tab,
-  and nothing on the keyboard kills the OS window outright any more. `Cmd+Q`
-  still quits kitty — harmless, since quitting kitty doesn't stop the work.
+- **Nothing on the keyboard closes more than one pane.** Stock kitty puts
+  `close_tab` on `Cmd+W` and `close_os_window` on `Cmd+Shift+W`. Both are
+  tab-wide or wider, and every workstream here is a pane in a *single* tab — so
+  either one ends every workstream at once, behind a "close this tab?" prompt
+  that sounds far smaller than what it does. `Cmd+W` is remapped to close the
+  focused pane, and the tab-wide close is left unbound; a tab closes on its own
+  when its last pane goes. `Cmd+W` asks first if a command is running in the
+  pane and closes silently at a bare shell prompt. `Ctrl+Shift+W` is the same
+  pane close without the prompt. `Cmd+Q` still quits kitty, which is harmless —
+  it ends the view, not the tmux sessions.
 - **`fn+F5`/`F6` inherit the current directory only outside tmux.** Inside a
   tmux session kitty can only see tmux's own directory. Doesn't matter in
   practice — you run `wts` next, which `cd`s you anyway.
