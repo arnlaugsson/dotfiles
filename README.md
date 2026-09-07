@@ -33,6 +33,21 @@ One directory per topic, loaded by filename rather than by a central list:
 
 Adding a tool means adding a directory, not editing a loader.
 
+    bin/         my own scripts, mostly git helpers
+    script/      bootstrap and install
+    zsh/         zshrc, prompt, completion, window titles
+    system/      $PATH, general aliases, ssh key helper
+    functions/   zsh functions and their completions
+    git/         config, aliases, global ignore
+    homebrew/    brew shellenv, and installs brew if it's missing
+    macos/       defaults and hostname, applied by dot
+    kitty/       terminal config, including the worksetup bindings
+    tmux/        tmux.conf, plugins, resurrect
+    worktrunk/   the wts function and the worksetup doc
+    vim/         vimrc and a Vundle bootstrap
+    docker/      two aliases
+    xcode/       one simulator alias
+
 The part worth reading on its own is the parallel setup in `kitty/`, `tmux/` and
 `worktrunk/`: one terminal pane per workstream, each holding a tmux session in
 its own git worktree. See [worktrunk/worksetup.md](worktrunk/worksetup.md).
