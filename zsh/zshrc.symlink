@@ -4,11 +4,6 @@ export ZSH=$HOME/.dotfiles
 # your project folder that we can `c [tab]` to
 export PROJECTS=~/Projects
 
-plugins=(
-  git 
-  autojump
-)
-
 # Stash your environment variables in ~/.localrc. This means they'll stay out
 # of your main dotfiles repository (which may be public, like this one), but
 # you'll have access to them in your scripts.
@@ -54,7 +49,8 @@ zle -N down-line-or-beginning-search
 bindkey "^[[A" up-line-or-beginning-search # Up
 bindkey "^[[B" down-line-or-beginning-search # Down
 
-[ -f /usr/local/etc/profile.d/autojump.sh ] && . /usr/local/etc/profile.d/autojump.sh
+[ -f "${HOMEBREW_PREFIX:-/opt/homebrew}/etc/profile.d/autojump.sh" ] \
+  && . "${HOMEBREW_PREFIX:-/opt/homebrew}/etc/profile.d/autojump.sh"
 export PATH="$HOME/.local/bin:$PATH"
 
 if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
