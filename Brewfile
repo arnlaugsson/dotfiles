@@ -27,13 +27,20 @@ brew 'watch'
 brew 'worktrunk'                  # wt / wts worktree management
 brew 'sandsower/tap/memento-vault'
 
+# ── Containers ─────────────────────────────────────────────────────
+# Docker Desktop replaced by colima: same docker CLI, lightweight Linux VM,
+# Apache-2.0, no licensing questions. `colima start` boots the daemon.
+brew 'colima'
+brew 'docker'                     # CLI only; colima provides the daemon
+brew 'docker-compose'
+brew 'docker-credential-helper'   # osxkeychain helper, independent of Desktop
+
 # ── Languages and package managers ─────────────────────────────────
 brew 'node@22'
 brew 'pnpm'
 brew 'pyenv'
 
 # ── Apps ───────────────────────────────────────────────────────────
-cask 'docker-desktop'             # also provides compose and buildx
 cask 'gcloud-cli'
 cask 'gnosis'
 cask 'kitty'                      # the worksetup depends on this
@@ -42,4 +49,5 @@ cask 'tfswitch'
 # Deliberately not listed:
 #   fonts          — avoid reinstalling powerline/nerd fonts on a new machine
 #   adoptopenjdk   — deprecated cask (now Temurin), no JDK in use
-#   docker-buildx / docker-compose — Docker Desktop bundles both
+#   docker-desktop — replaced by colima (see Containers above)
+#   gnosis         — removed; AI code-review app, never launched
