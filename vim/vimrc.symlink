@@ -1,4 +1,105 @@
+set nocompatible
+filetype off
+
+" --- Vundle Setup ---
+set rtp+=~/.vim/bundle/Vundle.vim
+call vundle#begin()
+
+Plugin 'VundleVim/Vundle.vim'
+
+" File navigation
+Plugin 'preservim/nerdtree'
+Plugin 'ctrlpvim/ctrlp.vim'
+
+" Git integration
+Plugin 'tpope/vim-fugitive'
+Plugin 'airblade/vim-gitgutter'
+
+" Editing helpers
+Plugin 'tpope/vim-surround'
+Plugin 'tpope/vim-commentary'
+Plugin 'jiangmiao/auto-pairs'
+
+" Status line
+Plugin 'vim-airline/vim-airline'
+Plugin 'vim-airline/vim-airline-themes'
+
+" Color scheme
+Plugin 'morhetz/gruvbox'
+
+" Syntax & language support
+Plugin 'sheerun/vim-polyglot'
+
+call vundle#end()
+filetype indent plugin on
 syntax on
 
+" --- General Settings ---
+set number
+set relativenumber
+set cursorline
+set showmatch
+set incsearch
+set hlsearch
+set ignorecase
+set smartcase
+set hidden
+set laststatus=2
+set wildmenu
+set scrolloff=8
+set signcolumn=yes
+set updatetime=100
+set encoding=utf-8
+set backspace=indent,eol,start
+
+" Indentation
+set tabstop=4
+set shiftwidth=4
+set expandtab
+set smartindent
+set autoindent
+
+" No swap/backup clutter
+set noswapfile
+set nobackup
+set nowritebackup
+
+" --- Key Mappings ---
+let mapleader = " "
+
+" NERDTree
+nnoremap <leader>n :NERDTreeToggle<CR>
+nnoremap <leader>f :NERDTreeFind<CR>
+let NERDTreeShowHidden=1
+
+" Clear search highlight
+nnoremap <leader><space> :nohlsearch<CR>
+
+" Quick save/quit
+nnoremap <leader>w :w<CR>
+nnoremap <leader>q :q<CR>
+
+" Window navigation
+nnoremap <C-h> <C-w>h
+nnoremap <C-j> <C-w>j
+nnoremap <C-k> <C-w>k
+nnoremap <C-l> <C-w>l
+
+" Move lines up/down in visual mode
+vnoremap J :m '>+1<CR>gv=gv
+vnoremap K :m '<-2<CR>gv=gv
+
+" --- Plugin Config ---
+" Airline
+let g:airline_powerline_fonts = 1
+let g:airline#extensions#tabline#enabled = 1
+
+" CtrlP - ignore files in .gitignore
+let g:ctrlp_user_command = ['.git', 'cd %s && git ls-files -co --exclude-standard']
+
+" Color scheme
+set background=dark
+silent! colorscheme gruvbox
+
 " Wrap gitcommit file types at the appropriate length
-filetype indent plugin on
+autocmd FileType gitcommit setlocal textwidth=72
