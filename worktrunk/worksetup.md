@@ -235,7 +235,10 @@ tmux kill-session -t <full-session-name>     # tmux won't clean up by itself
 ## Where the config lives
 
 Everything is tracked in `~/.dotfiles` and restores on a fresh machine with
-`script/bootstrap` (symlinks) then `script/install` (topic installers).
+`script/bootstrap` alone: it symlinks the `*.symlink` files, then hands off to
+`dot`, which sets the macOS defaults, installs the `Brewfile` (kitty and tmux
+included) and runs every topic's `install.sh`. `kitty/install.sh` is the one
+that appends the `include` line to `~/.config/kitty/kitty.conf`.
 
 | Tracked file | Lands at | What |
 |---|---|---|
