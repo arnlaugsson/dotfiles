@@ -1,0 +1,111 @@
+#!/usr/bin/env zsh
+# wts-greet [short-label] [branch]
+#
+# Prints a cow with a quote when `wts` opens a NEW worktree session.
+# Self-contained: no cowsay/fortune required. If cowsay IS installed it
+# is used for rendering, so `brew install cowsay` is a free upgrade.
+
+emulate -L zsh
+setopt local_options
+
+local short=${1:-work} branch=${2:-}
+
+local -a quotes
+quotes=(
+  "Simplicity is prerequisite for reliability.|Edsger W. Dijkstra"
+  "Testing shows the presence, not the absence of bugs.|Edsger W. Dijkstra"
+  "Premature optimization is the root of all evil.|Donald Knuth"
+  "Programs must be written for people to read, and only incidentally for machines to execute.|Abelson & Sussman, SICP"
+  "Make it work, make it right, make it fast.|Kent Beck"
+  "Talk is cheap. Show me the code.|Linus Torvalds"
+  "The most effective debugging tool is still careful thought.|Brian Kernighan"
+  "Controlling complexity is the essence of computer programming.|Brian Kernighan"
+  "Any fool can write code that a computer can understand. Good programmers write code that humans can understand.|Martin Fowler"
+  "One of my most productive days was throwing away 1000 lines of code.|Ken Thompson"
+  "The cheapest, fastest, and most reliable components are those that aren't there.|Gordon Bell"
+  "Perfection is achieved not when there is nothing more to add, but when there is nothing left to take away.|Antoine de Saint-Exupery"
+  "First, solve the problem. Then, write the code.|John Johnson"
+  "Good code is its own best documentation.|Steve McConnell"
+  "Walking on water and developing software from a specification are easy if both are frozen.|Edward V. Berard"
+  "It always takes longer than you expect, even when you take into account Hofstadter's Law.|Hofstadter's Law"
+  "Weeks of coding can save you hours of planning.|programmer proverb"
+  "Slow is smooth, smooth is fast.|proverb"
+  "Measure twice, cut once.|proverb"
+  "The best time to plant a tree was 20 years ago. The second best time is now.|proverb"
+)
+
+local pick=${quotes[$((RANDOM % ${#quotes[@]} + 1))]}
+local text=${pick%%|*}
+local who=${pick##*|}
+
+# ── colour, only when attached to a terminal ───────────────────────
+local C_DIM="" C_CYAN="" C_BOLD="" C_OFF=""
+if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
+  C_DIM=$(tput setaf 8 2>/dev/null)
+  C_CYAN=$(tput setaf 6 2>/dev/null)
+  C_BOLD=$(tput bold 2>/dev/null)
+  C_OFF=$(tput sgr0 2>/dev/null)
+fi
+
+print -r -- ""
+print -r -- "${C_CYAN}${C_BOLD}▸ ${short}${C_OFF}${C_DIM}${branch:+  ${branch}}${C_OFF}"
+print -r -- ""
+
+if command -v cowsay >/dev/null 2>&1; then
+  print -r -- "$text  -- $who" | cowsay -W 52
+  print -r -- ""
+  exit 0
+fi
+
+# ── word-wrap to 52 columns ────────────────────────────────────────
+local -a words lines
+words=(${=text})
+local W=52 line=""
+for w in $words; do
+  if [[ -z $line ]]; then
+    line=$w
+  elif (( ${#line} + 1 + ${#w} <= W )); then
+    line="$line $w"
+  else
+    lines+=("$line"); line=$w
+  fi
+done
+[[ -n $line ]] && lines+=("$line")
+
+# attribution gets its own right-aligned line
+local attrib="-- $who"
+
+# widest line sets the bubble width
+local width=0 l
+for l in $lines; do (( ${#l} > width )) && width=${#l}; done
+(( ${#attrib} > width )) && width=${#attrib}
+
+# right-align the attribution, then append it
+local apad="" i=0
+for (( i = ${#attrib}; i < width; i++ )); do apad+=" "; done
+lines+=("${apad}${attrib}")
+
+local bar_top="" bar_bot=""
+for (( i = 0; i < width + 2; i++ )); do bar_top+="_"; bar_bot+="-"; done
+print -r -- " ${bar_top}"
+
+local n=${#lines} idx=0 open close pad
+for l in $lines; do
+  (( idx++ ))
+  if   (( n == 1 ));      then open="<"; close=">"
+  elif (( idx == 1 ));    then open="/"; close="\\"
+  elif (( idx == n ));    then open="\\"; close="/"
+  else                         open="|"; close="|"
+  fi
+  pad=""
+  for (( i = ${#l}; i < width; i++ )); do pad+=" "; done
+  print -r -- "${open} ${l}${pad} ${close}"
+done
+print -r -- " ${bar_bot}"
+
+print -r -- '        \   ^__^'
+print -r -- '         \  (oo)\_______'
+print -r -- '            (__)\       )\/\'
+print -r -- '                ||----w |'
+print -r -- '                ||     ||'
+print -r -- ""

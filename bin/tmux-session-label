@@ -1,0 +1,22 @@
+#!/usr/bin/env zsh
+# Re-derive the @short status-bar label for every tmux session.
+#
+# tmux-resurrect saves session names, layouts and working directories, but NOT
+# custom session options — so the label `wts` sets is gone after a restore and
+# the status bar falls back to the full 70-character branch name.
+#
+# Wired to tmux's native `session-created` hook in ~/.tmux.conf, so it covers
+# restored sessions AND ones made by hand outside wts. (resurrect has no
+# post-restore hook — only post-save and pre-restore.)
+# Safe to run by hand at any time.
+
+emulate -L zsh
+setopt local_options
+
+tmux list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r s; do
+  [[ -z $s ]] && continue
+  short=$s
+  # Same rule wts uses: the first ticket-shaped token in the name.
+  [[ $s =~ '([A-Za-z]+-[0-9]+)' ]] && short=${(L)match[1]}
+  tmux set-option -t "$s" @short "$short"
+done
