@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+#
+# wt-post-remove.sh — tear down what `git worktree remove` leaves standing.
+#
+# A worktree here is never just a directory. `wts` also creates a tmux session
+# rooted in it, and the backend integration gate needs a throwaway postgres
+# container (`af-<ticket>-testpg`, per AGENTS.md's per-worktree DB convention).
+# Neither is owned by git, so removing the worktree strands both:
+#
+#   - the tmux session survives with a dangling cwd, and — because a tmux server
+#     inherits the cwd of whatever started it — a *server* rooted in a deleted
+#     worktree starts silently ignoring `-c`, at which point every new session
+#     lands in a nonexistent directory and `claude` refuses to launch
+#   - the container keeps a port bound and a few hundred MB allocated
+#
+# Both were being cleaned up by hand, which means mostly not at all: at the time
+# this hook was written there was an orphaned `fut-615` tmux session with no
+# worktree behind it, and three merged worktrees still on disk.
+#
+# Usage: wt-post-remove <branch>
+# Wired by ~/.config/worktrunk/config.toml as a user post-remove hook, scoped
+# to the github.com/gangverk/agenticfootball project identifier. post-* hooks run in
+# the background with output to a log (`wt config state logs`), so nothing here
+# can prompt, and nothing here should be able to fail loudly enough to matter.
+# Determinism: PARTIAL - inspects the live tmux server and docker daemon.
+# Always exits 0: the worktree is already gone by the time this runs, so a
+# failure here has nothing left to abort.
+
+# Deliberately no `set -e`: a missing tmux session must not skip the container
+# cleanup, and vice versa. Each step reports for itself.
+set -uo pipefail
+
+branch=${1:-}
+if [[ -z $branch ]]; then
+  printf 'wt-post-remove: no branch given — nothing to clean up\n' >&2
+  exit 0
+fi
+
+printf 'wt-post-remove: cleaning up after %s\n' "$branch"
+
+# ── tmux session ───────────────────────────────────────────────────────────────
+# `wts` derives the session name from the branch by collapsing every character
+# outside [A-Za-z0-9_-] to a dash (see ~/.dotfiles/worktrunk/aliases.zsh).
+# Mirror that transformation exactly, or we look for a session that never
+# existed. The `=` prefix forces an exact match — without it tmux falls back to
+# prefix matching and `fut-51` would happily kill `fut-518`.
+session=$(printf '%s' "$branch" | sed -E 's/[^a-zA-Z0-9_-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')
+
+if [[ -z $session ]]; then
+  printf 'wt-post-remove: branch %q sanitises to an empty session name — skipping tmux\n' "$branch"
+elif ! command -v tmux >/dev/null 2>&1; then
+  printf 'wt-post-remove: tmux not installed — skipping session cleanup\n'
+elif tmux has-session -t "=$session" 2>/dev/null; then
+  if tmux kill-session -t "=$session" 2>/dev/null; then
+    printf 'wt-post-remove: killed tmux session %s\n' "$session"
+  else
+    printf 'wt-post-remove: failed to kill tmux session %s — kill it by hand\n' "$session" >&2
+  fi
+else
+  printf 'wt-post-remove: no tmux session named %s\n' "$session"
+fi
+
+# ── throwaway postgres container ──────────────────────────────────────────────
+# The convention is `af-<ticket>-testpg`, but slice work varies it in practice
+# (`af-fut415s3-testpg`), so match on the ticket prefix instead of an exact name.
+# A branch with no ticket id (a retro or spike branch) has no container to find.
+if [[ ! $branch =~ ([A-Za-z]+-[0-9]+) ]]; then
+  printf 'wt-post-remove: no ticket id in %s — no test container to remove\n' "$branch"
+  exit 0
+fi
+
+# fut-532 -> fut532, matching how the container names are actually written.
+ticket=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]' | tr -d '-')
+
+if ! command -v docker >/dev/null 2>&1; then
+  printf 'wt-post-remove: docker not installed — skipping container cleanup\n'
+  exit 0
+fi
+
+# `docker ps` against a stopped daemon errors out fast rather than hanging, and
+# a missing daemon is not a reason to complain: there is then no container.
+#
+# --filter name is a regex, and an open-ended `^af-fut41` would also match
+# `af-fut415s3-testpg` — so removing FUT-41's worktree would take FUT-415's
+# database with it. Anchor the ticket to a following `-` or slice suffix.
+names=$(docker ps -aq --filter "name=^af-${ticket}(-|s[0-9]+-)" 2>/dev/null)
+
+if [[ -z $names ]]; then
+  printf 'wt-post-remove: no container matching af-%s*\n' "$ticket"
+  exit 0
+fi
+
+count=0
+while IFS= read -r id; do
+  [[ -n $id ]] || continue
+  name=$(docker inspect --format '{{.Name}}' "$id" 2>/dev/null | sed 's#^/##')
+  if docker rm -f "$id" >/dev/null 2>&1; then
+    printf 'wt-post-remove: removed container %s\n' "${name:-$id}"
+    count=$((count + 1))
+  else
+    printf 'wt-post-remove: failed to remove container %s — remove it by hand\n' "${name:-$id}" >&2
+  fi
+done <<<"$names"
+
+printf 'wt-post-remove: done (%d container(s) removed)\n' "$count"
+exit 0

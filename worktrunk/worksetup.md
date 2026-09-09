@@ -189,11 +189,58 @@ exec zsh
 were created in. Don't `git checkout` inside one — kill it and `wts` the right
 branch.
 
-**Finishing a workstream:**
+**Finishing a workstream:** see *Closing down work* below.
+
+---
+
+## Closing down work
+
+A worktree owns three things git does not: the tmux session `wts` created, any
+throwaway database container, and whatever gitignored local state accumulated
+inside it. `git worktree remove` strands all three, which is why `tmux ls` used
+to accumulate sessions with no worktree behind them.
+
+Two `wt` hooks now cover that, in `~/.config/worktrunk/config.toml`:
+
+| Hook | Script | What it does |
+|---|---|---|
+| `pre-remove` | `bin/wt-pre-remove` | Classifies every gitignored path as disposable / artifact / irreplaceable / unknown. **Blocks** removal on irreplaceable (tfstate, `.env*`, hand-written local config) or on anything unclassified. |
+| `post-remove` | `bin/wt-post-remove` | Kills the `wts` session for that branch and removes the branch's `af-<ticket>-testpg` container. |
+
+`pre-remove` blocks, so a non-zero exit aborts the removal. `post-remove` runs
+detached — find its output with `wt config state logs`.
+
+Both are scoped to `[projects."github.com/gangverk/agenticfootball"]`, because
+`wt-pre-remove`'s path classification is that repo's `.gitignore`. Other repos
+see no hooks at all. Adding a repo means adding a `[projects."…"]` entry and
+teaching `wt-pre-remove` about its ignored paths.
+
+**Failing closed on `unknown` is deliberate.** Removing the FUT-82 worktree
+destroyed both AWS accounts' bootstrap Terraform state, because gitignored files
+are invisible to `git status` and to any diff against `origin/main`. A new
+gitignore entry now blocks removal until someone classifies it in the script.
+Once you have confirmed the loss is acceptable: `wt remove --no-hooks <branch>`.
+
+So, to close a workstream down:
+
 ```bash
-wt remove                                    # worktree + branch if merged
-tmux kill-session -t <full-session-name>     # tmux won't clean up by itself
+# from the worktree: merge, capture, retro   (or run /close-out in Claude)
+# then, from the main worktree:
+wt remove --reap <branch>   # NOT from inside the worktree being removed
 ```
+
+Run it from `main`. `wt remove` cannot delete the worktree you are standing in,
+and `post-remove` would kill the session you are sitting in.
+
+**Use `--reap`.** It kills processes whose cwd is under the worktree — dev
+servers, watchers, language servers — while leaving interactive shells alone.
+Without it those processes survive with a deleted cwd and keep their ports
+bound: removing the FUT-503 worktree turned up a vite dev server on `:3000` *and*
+a Go backend still running, neither of which the tmux session or the container
+cleanup would have touched.
+
+In Claude Code, `/close-out` walks the whole chain including the three vault
+gates (project note, artifacts archived, decision notes captured).
 
 ---
 
@@ -248,6 +295,13 @@ that appends the `include` line to `~/.config/kitty/kitty.conf`.
 | `worktrunk/worksetup.md` | `~/.config/worksetup.md` | This file |
 | `bin/wts-greet` | on `$PATH` | The cow |
 | `bin/tmux-session-label` | on `$PATH` | Rebuilds `@short` after a restore |
+| `bin/wt-pre-remove` | on `$PATH` | Gitignore safety gate before `wt remove` |
+| `bin/wt-post-remove` | on `$PATH` | Kills the session + container after `wt remove` |
+| `worktrunk/agenticfootball-agents-md-closeout.patch` | — | The matching AGENTS.md section, not yet on `main` |
+
+Not tracked: `~/.config/worktrunk/config.toml` (the `[projects."…"]` hook wiring
+above — worktrunk's own file, created by `wt config create`) and
+`~/.claude/commands/close-out.md`.
 
 Not tracked, and fine that way: `~/.tmux/plugins/` (tpm clones these itself) and
 `~/.config/kitty/kitty.conf` (kitty's own defaults; only the one `include` line

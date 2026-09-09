@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+#
+# wt-pre-remove.sh — backstop for gate 2 of the Worktree Cleanup Protocol.
+#
+# `wt remove` already refuses a worktree with uncommitted *tracked* changes, so
+# the tracked half of gate 2 is covered by worktrunk itself. The half nothing
+# covers is gitignored files: they are invisible to `git status`, to a diff
+# against `origin/main`, and to any review of "what would I lose". Removing the
+# FUT-82 worktree destroyed both AWS accounts' bootstrap Terraform state exactly
+# this way. Gitignored is not the same as disposable.
+#
+# So this hook classifies every ignored path in the worktree about to be deleted:
+#
+#   disposable   caches and regenerable build output — say nothing
+#   artifact     dev handoff files (plans/, checkpoints/) — print an inventory,
+#                but do not block: the close-out chain archives these to the
+#                memento vault, and blocking here would only teach --no-hooks
+#   irreplaceable  local state and credentials that exist nowhere else — BLOCK
+#   unknown      anything unrecognised — BLOCK, because the whole failure mode
+#                this exists to prevent was a file nobody thought about
+#
+# Failing closed on `unknown` is the point. A new gitignore entry that holds
+# something precious blocks removal until someone classifies it here, rather
+# than being destroyed silently the first time a worktree is cleaned up.
+#
+# Usage: wt-pre-remove <worktree_path>
+# Wired by ~/.config/worktrunk/config.toml as a user pre-remove hook, scoped to
+# the github.com/gangverk/agenticfootball project identifier — the path
+# classification below is specific to that repo and must not apply elsewhere; pre-* hooks block, so
+# a non-zero exit aborts `wt remove`. Override deliberately with `wt remove
+# --no-hooks` once you have confirmed the inventory is safe to lose.
+# Determinism: FULL - reads the worktree's git state, no network, no database.
+# Exit 0 = safe to remove, exit 1 = something needs archiving or classifying.
+
+set -uo pipefail
+
+worktree=${1:-}
+if [[ -z $worktree || ! -d $worktree ]]; then
+  # Nothing to inspect. Never block removal over a bad invocation - a hook that
+  # can strand worktrees is worse than one that occasionally lets a cache slip.
+  printf 'wt-pre-remove: no worktree path given (got %q) — skipping gitignore check\n' "$worktree" >&2
+  exit 0
+fi
+
+# Ignored paths, one per line, as git reports them (directories keep their
+# trailing slash). --ignored alone would also list untracked files; the `^!!`
+# filter keeps only the ignored ones.
+ignored=$(git -C "$worktree" status --ignored --porcelain 2>/dev/null | sed -n 's/^!! //p')
+
+if [[ -z $ignored ]]; then
+  printf 'wt-pre-remove: no gitignored files in %s — gate 2 clear\n' "$worktree"
+  exit 0
+fi
+
+# Regenerable from a lockfile, a spec, a build, or a package manager. Losing any
+# of these costs time, never information.
+is_disposable() {
+  case $1 in
+    node_modules/|*/node_modules/) return 0 ;;   # pnpm install
+    backend/gen/*) return 0 ;;                   # make gen-api / make gen-proto
+    dist/|*/dist/|backend/bin/) return 0 ;;      # build output
+    coverage/|*/coverage/) return 0 ;;           # test run
+    backend/tmp/|.vite/|*.tsbuildinfo) return 0 ;;
+    .lavish/) return 0 ;;                        # visual_surfaces, local retention
+    .beislid/checkpoints/*|.beislid/show-me/) return 0 ;;
+    .beislid/project-install.json) return 0 ;;   # beislid install project
+    .agents/skills/*|.claude/skills/*|.codex/|.codex/skills/) return 0 ;;  # symlinks to ~/Projects/beislid
+    e2e/playwright-report/|e2e/test-results/) return 0 ;;  # playwright run output
+    *.terraform/) return 0 ;;                    # terraform init (matches infra/*/.terraform/)
+    *.terraform.lock.hcl) return 0 ;;            # terraform init -upgrade
+    .DS_Store|*/.DS_Store|Thumbs.db) return 0 ;;
+    *.log|*.swp|*.swo|*~) return 0 ;;
+    .orra/) return 0 ;;                          # unused; see AGENTS.md history
+    *) return 1 ;;
+  esac
+}
+
+# Real work product that lives only in this worktree, but that the close-out
+# chain is expected to archive to the vault rather than lose. Inventory, no block.
+is_artifact() {
+  case $1 in
+    docs/plans/|docs/plans/*) return 0 ;;
+    checkpoints/|checkpoints/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Exists nowhere else and cannot be regenerated: infrastructure state and local
+# credentials. This is the FUT-82 class.
+is_irreplaceable() {
+  case $1 in
+    *.tfstate|*.tfstate.backup) return 0 ;;
+    .env|.env.local|.env.*.local|*/.env|*/.env.local) return 0 ;;
+    docker-compose.override.yml) return 0 ;;     # hand-written local topology
+    .claude/settings.local.json) return 0 ;;     # hand-written per-project permissions/auto-mode scope
+    *) return 1 ;;
+  esac
+}
+
+artifacts=()
+blockers=()
+unknowns=()
+
+while IFS= read -r path; do
+  [[ -n $path ]] || continue
+  if is_irreplaceable "$path"; then
+    blockers+=("$path")
+  elif is_artifact "$path"; then
+    artifacts+=("$path")
+  elif is_disposable "$path"; then
+    continue
+  else
+    unknowns+=("$path")
+  fi
+done <<<"$ignored"
+
+if ((${#artifacts[@]})); then
+  printf 'wt-pre-remove: dev artifacts in this worktree (archive to the vault if not already done):\n'
+  printf '  %s\n' "${artifacts[@]}"
+fi
+
+status=0
+
+if ((${#blockers[@]})); then
+  printf '\nwt-pre-remove: REFUSING to remove %s\n' "$worktree" >&2
+  printf 'These gitignored paths exist nowhere else and would be destroyed:\n' >&2
+  printf '  %s\n' "${blockers[@]}" >&2
+  status=1
+fi
+
+if ((${#unknowns[@]})); then
+  printf '\nwt-pre-remove: REFUSING to remove %s\n' "$worktree" >&2
+  printf 'These gitignored paths are not classified by this hook:\n' >&2
+  printf '  %s\n' "${unknowns[@]}" >&2
+  printf 'Classify each one in ~/.dotfiles/bin/wt-pre-remove (disposable / artifact /\n' >&2
+  printf 'irreplaceable) so the next removal knows what it is.\n' >&2
+  status=1
+fi
+
+if ((status)); then
+  printf '\nArchive or classify them, then retry. To remove anyway once you have\n' >&2
+  printf 'confirmed the loss is acceptable: wt remove --no-hooks <branch>\n' >&2
+  exit 1
+fi
+
+printf 'wt-pre-remove: gate 2 clear for %s\n' "$worktree"

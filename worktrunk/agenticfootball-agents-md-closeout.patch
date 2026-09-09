@@ -1,0 +1,71 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index b6b45a5c..e9f661a6 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -116,16 +116,18 @@ Check `docs/tutto-sync-log.md` before starting work on a domain. If the log show
+ 
+ When beginning work on any Linear ticket, always follow this sequence:
+ 
+-1. **Switch to the `agenticfootball/main` tmux session** — `wt` must run inside tmux so it opens the worktree as a new window rather than a new session. If not already there, switch to it first.
+-2. **Create the worktree**: run `wsc <branch_name>` (`wsc` is the alias for `wt switch --create`), where `branch_name` is the `gitBranchName` field from the Linear issue (e.g. `wsc victor/fut-154-scope-for-admin-users`). This fetches latest main, creates the branch, and opens it in a new tmux window in one step.
+-3. **Move the ticket to In Progress** in Linear.
++1. **Create the worktree and its session**: run `wts <branch_name>`, where `branch_name` is the `gitBranchName` field from the Linear issue (e.g. `wts victor/fut-154-scope-for-admin-users`). One command fetches latest main, creates the branch and its worktree, `cd`s into it, and opens a **dedicated tmux session** rooted there. It auto-detects whether the branch already exists, so re-running it just reattaches — safe to spam.
++2. **Move the ticket to In Progress** in Linear.
+ 
+-All three steps must happen before any code is written.
++Both steps must happen before any code is written.
++
++The model is **one tmux session per worktree**. One *window* per worktree inside a shared `agenticfootball/main` session was the pre-`wts` arrangement; docs or habits assuming it are stale. The full layer model (kitty owns layout, tmux owns persistence, worktrunk owns checkouts) is at `~/.config/worksetup.md`.
+ 
+ Useful aliases (defined in `~/.zshrc`):
+-- `wsc <branch>` — create worktree + open in new tmux window
+-- `ws <branch>` — switch to an existing worktree window
+-- `tg` — tmux-glance (overview of all windows/worktrees)
++- `wts <branch>` — worktree + dedicated tmux session, creating or reattaching. The one you want.
++- `wsc <branch>` — plain `wt switch --create`, no tmux
++- `ws <branch>` — plain `wt switch`, no tmux
++- `tg <state>` — tmux-glance: stamp a state marker (🛠 ⏳ ⛔ 🧪 👀 ✅ 💤) onto the **current** tmux window's name. Not an overview tool — with one session per worktree the status bar shows only your own window, so read the markers across worktrees in the session picker, `Ctrl-b s`. Beislið stamps these automatically (`workflow_signals` in `.beislid/workflow.md`).
+ 
+ ## Agent Skills
+ 
+@@ -137,20 +139,32 @@ This repo uses [Beislid](https://github.com/sandsower/beislid) for orchestrator
+ 
+ ## Memento
+ 
+-"The memento vault," referenced below in the Worktree Cleanup Protocol, is [Memento Vault](https://github.com/sandsower/memento-vault) — a git-backed folder of markdown notes that agents write and read automatically (session-end triage captures what happened; session-start briefing and prompt-time recall inject relevant notes back in on later sessions). It is not part of Beislið, though Beislið's `babysit` closeout (`.beislid/workflow.md`) chains into it after a PR merges (`memento: mode: auto`) — Memento is the persistent-knowledge layer, `retro` is the workflow-tuning layer that reads it. Manual capture: `/memento`. Housekeeping: `/memento-defrag`.
++"The memento vault," referenced below in *Closing down work*, is [Memento Vault](https://github.com/sandsower/memento-vault) — a git-backed folder of markdown notes that agents write and read automatically (session-end triage captures what happened; session-start briefing and prompt-time recall inject relevant notes back in on later sessions). It is not part of Beislið, though Beislið's `babysit` closeout (`.beislid/workflow.md`) chains into it after a PR merges (`memento: mode: auto`) — Memento is the persistent-knowledge layer, `retro` is the workflow-tuning layer that reads it. Manual capture: `/memento`. Housekeeping: `/memento-defrag`.
+ 
+ ## Orra
+ 
+-Orra is the worktree orchestration layer for this project. The orchestrator agent (`--agent orchestrator`) runs in the `main` worktree and coordinates work across all feature branches.
++Orra is an **MCP server** (`orra_*` tools) that reports on work state across worktrees — git and PR state, CI, agent activity, status buckets (`ready_to_land` / `needs_attention` / `stale`), plus per-agent stuck detection. The orchestrator agent (`.claude/agents/orchestrator.md`, run with `--agent orchestrator`) is its driver and is meant to run in the `main` worktree.
++
++**It is not currently connected on any developer machine in this repo.** There is no `.mcp.json`, no `orra` entry in any local MCP registration, and no `.orra/` state directory in any worktree — and `orra_setup` creates that on first use, so its absence is proof nothing has run. Note that the agent is instructed *"Do NOT use git commands directly"*, so launching `--agent orchestrator` without the MCP server connected fails on the first tool call with no fallback. Connect Orra (a per-developer local `claude mcp add`, same pattern as `linear-server`) before using it.
++
++Orra reports on *work*, not on terminals. For a live view of the tmux sessions themselves, use `Ctrl-b s`.
+ 
+-### Worktree Cleanup Protocol
++## Closing down work
+ 
+-Before removing any worktree, all three gates must pass:
++Closeout is one ordered chain, and it is not finished when the PR merges. A worktree here owns four things beyond its directory: a tmux session, a throwaway postgres container, gitignored local state, and knowledge that only exists in the vault if someone puts it there. Historically the chain stopped at `retro` and the rest was done by hand — meaning mostly not at all.
+ 
+-1. **Vault project note exists** — `projects/<worktree-name>.md` must be present in the memento vault (see Memento above) with session history and any linked decision notes. Do not proceed without confirming this.
++Run `/close-out` (`.claude/commands/close-out.md`) or follow it manually. Steps 1–3 run **inside** the worktree; steps 4–6 run **from `main`**, because you cannot remove the worktree you are standing in.
+ 
+-2. **Artifacts archived** — Any design documents, specs, plans, or ADRs that live in the worktree but are NOT on `main` must be moved to the vault archive before removal. Files already merged to `main` (verify with `git ls-files` against `origin/main`) are safe. **This gate explicitly includes gitignored files**: check `git status --ignored` (or `git clean -ndX`) for state files, local credentials, and similar — e.g. Terraform local state (`infra/bootstrap/terraform-*.tfstate`). The FUT-82 worktree removal destroyed both AWS accounts' bootstrap tfstate because gitignored files were invisible to this gate; gitignored ≠ disposable.
++1. **Merge** — `scripts/gh-merge-cleanup.sh <pr-number>`, subject to the merge-boundary checklist in `.beislid/workflow.md`. Never a raw `gh pr merge --delete-branch`.
++2. **Capture** — `/memento`, so the session's decisions and discoveries reach the vault.
++3. **Retro** — `/retro`, which reads the vault and proposes workflow changes. Sync `.beislid/workflow.md` against `origin/main` first; worktree copies go stale.
++4. **Gate 1 — vault project note exists.** `projects/<worktree-name>.md` must be present in the memento vault (see Memento above) with session history and any linked decision notes. `<worktree-name>` is the worktree directory's basename, e.g. `agenticfootball.arnlaugsson-fut-532-rfi-form-move-payout-date-higher`. Do not proceed without confirming this.
++5. **Gate 2 — artifacts archived.** Any design documents, specs, plans, or ADRs that live in the worktree but are NOT on `main` must be moved to the vault archive before removal. Files already merged to `main` (verify with `git ls-files` against `origin/main`) are safe. **This gate explicitly includes gitignored files**: state files, local credentials and similar are invisible to `git status` and to any diff against `origin/main`. The FUT-82 worktree removal destroyed both AWS accounts' bootstrap tfstate exactly this way; gitignored ≠ disposable. `scripts/wt-pre-remove.sh` mechanises the backstop (see below), but it classifies paths — it cannot judge whether a plan still matters.
++6. **Gate 3 — decision notes captured.** Any architectural or domain decisions made during the branch's lifetime must have corresponding vault notes (type: `decision`). Check the project note's `## Notes` section for linked notes; if it's empty and meaningful decisions were made, capture them before cleanup.
++7. **Remove** — only after all three gates pass, and only with the user's confirmation: `wt remove <branch>` **from `main`**. Two project hooks (`.config/wt.toml`) fire around it:
++   - `pre-remove` → `scripts/wt-pre-remove.sh` classifies every gitignored path as disposable / artifact / irreplaceable / unknown. It **blocks** on irreplaceable (tfstate, `.env*`, hand-written local config) and on anything unclassified, printing an inventory of dev artifacts either way. Failing closed on `unknown` is deliberate: the FUT-82 loss was a file nobody thought about. A new gitignore entry blocks removal until someone classifies it in that script.
++   - `post-remove` → `scripts/wt-post-remove.sh` kills the tmux session `wts` created and removes the `af-<ticket>-testpg` container. Both are outside git's ownership, so nothing else reclaims them. A stranded tmux *server* rooted in a deleted worktree is worse than untidy: tmux then silently ignores `-c`, every new session lands in a nonexistent directory, and `claude` refuses to launch.
+ 
+-3. **Decision notes captured** — Any architectural or domain decisions made during the branch's lifetime must have corresponding vault notes (type: `decision`). Check the project note's `## Notes` section for linked notes; if it's empty and meaningful decisions were made, capture them before cleanup.
++Project hooks need one-time approval per command (`~/.config/worktrunk/approvals.toml`); changing a command re-prompts. Override deliberately with `wt remove --no-hooks` only after confirming the inventory is safe to lose.
+ 
+-Only after all three pass: confirm with the user, then remove the local worktree branch.
++Beislið automates steps 1–3 only: `babysit.closeout` in `.beislid/workflow.md` has `merge`/`memento`/`retro` slots and no worktree step, which is why steps 4–7 live here rather than in config.
