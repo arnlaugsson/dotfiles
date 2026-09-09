@@ -63,6 +63,15 @@ wts() {
   local short=$session
   [[ $branch_now =~ '([A-Za-z]+-[0-9]+)' ]] && short=${(L)match[1]}
 
+  # A tmux server inherits the cwd of whatever started it. If the first `wts` of
+  # the day starts it, the server is rooted in that worktree -- and once the
+  # worktree is removed the server's cwd dangles, after which tmux silently
+  # ignores -c and every new session starts in a deleted directory (the shell
+  # lands with PWD=. and `claude` refuses to launch). Root it in $HOME instead.
+  if ! tmux has-session 2>/dev/null; then
+    (builtin cd -- "$HOME" && tmux start-server)
+  fi
+
   if ! tmux has-session -t "=$session" 2>/dev/null; then
     # New work: greet with a cow. Degrades silently if the script is missing.
     local greet=$HOME/.dotfiles/bin/wts-greet
