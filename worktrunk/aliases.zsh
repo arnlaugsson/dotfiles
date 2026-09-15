@@ -78,6 +78,14 @@ wts() {
     local cmd="exec ${(q)${SHELL:-/bin/zsh}} -l"
     [[ -x $greet ]] && cmd="${(q)greet} ${(q)short} ${(q)branch_now}; $cmd"
 
+    # `-c` alone is not enough. If the server's own cwd is an *unlinked* inode --
+    # which it is as soon as a worktree it was rooted in gets removed and a later
+    # `wsc` recreates a directory at the same path -- the server cannot place the
+    # new pane and the shell simply inherits that dangling cwd: PWD=".", getcwd()
+    # failing, every relative path and `claude` broken until you `cd ..; cd back`.
+    # cd ourselves, from inside the pane, where an absolute path always resolves.
+    cmd="cd -- ${(q)dir} || exit 1; $cmd"
+
     tmux new-session -d -s "$session" -c "$dir" "$cmd" || return $?
     # NB: set-option rejects the "=" exact-match prefix that has-session accepts.
     # Bare name is still an exact match (tmux tries exact before prefix).
