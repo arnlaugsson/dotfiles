@@ -90,11 +90,16 @@ if [[ -z $names ]]; then
   exit 0
 fi
 
+# -v takes the container's anonymous data volume with it. postgres:16 declares
+# /var/lib/postgresql/data as a VOLUME, so `docker run` without -v creates one,
+# and `docker rm` without -v orphans it: ~1 GB per worktree, referenced by
+# nothing (240 of them, 19 GB, by 2026-09-13 - see AGENTS.md). Named volumes are
+# untouched by -v, so this never takes a compose `pgdata`.
 count=0
 while IFS= read -r id; do
   [[ -n $id ]] || continue
   name=$(docker inspect --format '{{.Name}}' "$id" 2>/dev/null | sed 's#^/##')
-  if docker rm -f "$id" >/dev/null 2>&1; then
+  if docker rm -v -f "$id" >/dev/null 2>&1; then
     printf 'wt-post-remove: removed container %s\n' "${name:-$id}"
     count=$((count + 1))
   else
