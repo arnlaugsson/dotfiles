@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Record what the Claude Code agent in this tmux session is doing, as the
+# session option @agent. tmux.conf reads it for the badge colour, the
+# all-sessions strip on the right and the Ctrl-b s picker.
+#
+# Called from Claude Code hooks in ~/.claude/settings.json:
+#
+#   tmux-agent-state working            UserPromptSubmit
+#   tmux-agent-state waiting            Notification (permission prompt),
+#                                       PreToolUse on AskUserQuestion
+#   tmux-agent-state resume             PostToolUse: waiting -> working once
+#                                       the prompt is answered
+#   tmux-agent-state done               Stop
+#   tmux-agent-state clear              SessionStart, SessionEnd
+#
+# Outside tmux it does nothing, so other terminals and projects are untouched.
+# It must never fail or slow the agent down: every path exits 0.
+
+cat >/dev/null 2>&1   # drain the hook's JSON payload; unused
+
+[[ -n ${TMUX_PANE:-} ]] || exit 0
+
+session=$(tmux display-message -p -t "$TMUX_PANE" '#{session_id}' 2>/dev/null) || exit 0
+[[ -n $session ]] || exit 0
+
+case "${1:-}" in
+  working|waiting|done)
+    tmux set-option -q -t "$session" @agent "$1" ;;
+  resume)
+    # PostToolUse fires constantly; only act when leaving a prompt.
+    [[ $(tmux show-options -qv -t "$session" @agent) == waiting ]] || exit 0
+    tmux set-option -q -t "$session" @agent working ;;
+  clear)
+    tmux set-option -q -u -t "$session" @agent ;;
+  *)
+    exit 0 ;;
+esac
+
+# Repaint every client now rather than on the next status-interval tick.
+for c in $(tmux list-clients -F '#{client_name}' 2>/dev/null); do
+  tmux refresh-client -S -t "$c" 2>/dev/null
+done
+exit 0

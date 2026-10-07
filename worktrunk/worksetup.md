@@ -90,7 +90,46 @@ triage, one agent full-screen when you actually engage with it.
 | Reload kitty config | Ctrl+Cmd+, |
 
 The focused pane is full-brightness with a blue border; unfocused panes dim to
-75%. That's how you find the agent that just asked you a question.
+75%. That tells you where *you* are — the agent badges below tell you which
+agent needs you.
+
+### Agent state — who needs you
+
+Every agent reports its own state, so you don't have to poll panes:
+
+| Badge (bottom-left of each pane) | Strip (bottom-right) | Meaning |
+|---|---|---|
+| **amber** `fut-492 ◆ waiting` | amber `492◆` | Blocked on you — a permission prompt or a question |
+| green `fut-513` | green `513✓` | Finished its turn; ready for review or the next prompt |
+| blue `fut-429` | blue `429●` | Working |
+| blue, no marker | grey `738` | No agent running (or one started before the hooks) |
+
+The **strip** on the right lists every session, sorted, with your own dimmed.
+It is the part that survives `Cmd+Shift+Enter`: zoomed into one pane, you still
+see `492◆` the moment another agent needs you.
+
+`Ctrl-b s` opens the same states as a full-screen picker with a live preview —
+arrow to the waiting one, Enter to jump.
+
+How it works: Claude Code hooks in `~/.claude/settings.json` call
+`tmux-agent-state <working|waiting|resume|done|clear>`, which sets the session
+option `@agent`; `tmux.conf` colours the badge and builds the strip from it.
+Outside tmux the script is a no-op, so other terminals and repos are unaffected.
+
+| Claude event | `@agent` |
+|---|---|
+| `UserPromptSubmit` | working |
+| `Notification` (`permission_prompt`, `elicitation_dialog`), `PreToolUse` on `AskUserQuestion` | waiting |
+| `PostToolUse` | back to working, only if it was waiting |
+| `Stop` | done |
+| `SessionStart`, `SessionEnd` | cleared |
+
+`idle_prompt` is deliberately *not* mapped: it fires once a finished agent has
+sat idle for a while, so it would turn every `done` agent amber and drown the
+real prompts.
+
+`tg` (tmux-glance) is separate and still manual — it decorates the tmux
+*window name*, for states the hooks can't infer (`review`, `blocked`).
 
 ### tmux — prefix is Ctrl-b
 
@@ -104,7 +143,7 @@ You mostly don't need these. They matter when you split *inside* one workstream
 | Move between tmux panes | Ctrl-b `h` `j` `k` `l` |
 | Resize tmux pane | Ctrl-b `H` `J` `K` `L` (repeatable) |
 | New window / next | Ctrl-b `c` / Ctrl-b `n` |
-| **Session picker** | Ctrl-b `s` |
+| **Session picker** (zoomed, with agent state) | Ctrl-b `s` |
 | Detach (leave it running) | Ctrl-b `d` |
 | Reload tmux config | Ctrl-b `r` |
 | Save session state now | Ctrl-b `Ctrl-s` |
@@ -295,13 +334,15 @@ that appends the `include` line to `~/.config/kitty/kitty.conf`.
 | `worktrunk/worksetup.md` | `~/.config/worksetup.md` | This file |
 | `bin/wts-greet` | on `$PATH` | The cow |
 | `bin/tmux-session-label` | on `$PATH` | Rebuilds `@short` after a restore |
+| `bin/tmux-agent-state` | on `$PATH` | Sets `@agent` from Claude Code hooks |
 | `bin/wt-pre-remove` | on `$PATH` | Gitignore safety gate before `wt remove` |
 | `bin/wt-post-remove` | on `$PATH` | Kills the session + container after `wt remove` |
 | `worktrunk/agenticfootball-agents-md-closeout.patch` | — | The matching AGENTS.md section, not yet on `main` |
 
 Not tracked: `~/.config/worktrunk/config.toml` (the `[projects."…"]` hook wiring
-above — worktrunk's own file, created by `wt config create`) and
-`~/.claude/commands/close-out.md`.
+above — worktrunk's own file, created by `wt config create`),
+`~/.claude/commands/close-out.md`, and the seven `tmux-agent-state` hook entries
+in `~/.claude/settings.json` (see *Agent state* above for the exact mapping).
 
 Not tracked, and fine that way: `~/.tmux/plugins/` (tpm clones these itself) and
 `~/.config/kitty/kitty.conf` (kitty's own defaults; only the one `include` line
