@@ -59,8 +59,17 @@ bind r source-file ~/.tmux.conf \; display "tmux.conf reloaded"
 #          one kitty pane is zoomed:  429● 436✓ 492◆ 738
 set -g status-interval     5
 set -g status-style        "bg=colour236,fg=colour246"
-set -g status-left-length  24
-set -g status-left         "#[bg=#{?#{==:#{@agent},waiting},colour214,#{?#{==:#{@agent},done},colour71,colour39}},fg=colour236,bold] #{?#{@short},#{@short},#S}#{?#{==:#{@agent},waiting}, ◆ waiting,} #[default] "
+set -g status-left-length  80
+# Branch slug: the session name minus `arnlaugsson-fut-513-`, capped at 65.
+# Expanded with #{E:@slug}; shown after the badge unless it equals the badge
+# (e.g. `main`).
+set -g @slug "#{=/65/…:#{s/^([a-z]+-)?[a-z]+-[0-9]+-//:session_name}}"
+set -g status-left         "#[bg=#{?#{==:#{@agent},waiting},colour214,#{?#{==:#{@agent},done},colour71,colour39}},fg=colour236,bold] #{?#{@short},#{@short},#S}#{?#{==:#{@agent},waiting}, ◆ waiting,} #[default] #{?#{==:#{E:@slug},#{?#{@short},#{@short},#S}},,#[fg=colour252]#{E:@slug}#[default] }"
+# The window list only earns its space when a session has more than one
+# window; with one it would just repeat the pane's process title (claude's
+# version number).
+set -g window-status-format         "#{?#{==:#{session_windows},1},,#I:#W#{?window_flags,#{window_flags}, }}"
+set -g window-status-current-format "#{?#{==:#{session_windows},1},,#I:#W#{?window_flags,#{window_flags}, }}"
 set -g status-right-length 120
 # One entry per session, sorted by name; the second branch renders the current
 # session (dim — its badge is already on the left). `fut-` is stripped to fit.
