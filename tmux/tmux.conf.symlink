@@ -53,8 +53,11 @@ bind r source-file ~/.tmux.conf \; display "tmux.conf reloaded"
 # id, set by `wts`; sessions made by hand fall back to the full name.
 #
 # Agent state: @agent is set per session by `tmux-agent-state`, called from
-# Claude Code hooks (~/.claude/settings.json). working | waiting | done | unset.
-#   badge  blue = working / no agent, AMBER = waiting on you, green = done
+# Claude Code hooks (~/.claude/settings.json).
+# working | waiting | background | done | unset.
+#   badge  blue = working / no agent, AMBER = waiting on you, green = done,
+#          light blue ◌ = turn over but still waiting on something outside
+#          (a sub-agent, background command, wakeup, or CodeRabbit review)
 #   strip  every session on the right, so you still see who needs you while
 #          one kitty pane is zoomed:  429● 436✓ 492◆ 738
 set -g status-interval     5
@@ -64,7 +67,7 @@ set -g status-left-length  80
 # Expanded with #{E:@slug}; shown after the badge unless it equals the badge
 # (e.g. `main`).
 set -g @slug "#{=/65/…:#{s/^([a-z]+-)?[a-z]+-[0-9]+-//:session_name}}"
-set -g status-left         "#[bg=#{?#{==:#{@agent},waiting},colour214,#{?#{==:#{@agent},done},colour71,colour39}},fg=colour236,bold] #{?#{@short},#{@short},#S}#{?#{==:#{@agent},waiting}, ◆ waiting,} #[default] #{?#{==:#{E:@slug},#{?#{@short},#{@short},#S}},,#[fg=colour252]#{E:@slug}#[default] }"
+set -g status-left         "#[bg=#{?#{==:#{@agent},waiting},colour214,#{?#{==:#{@agent},done},colour71,#{?#{==:#{@agent},background},colour117,colour39}}},fg=colour236,bold] #{?#{@short},#{@short},#S}#{?#{==:#{@agent},waiting}, ◆ waiting,#{?#{==:#{@agent},background}, ◌ external,}} #[default] #{?#{==:#{E:@slug},#{?#{@short},#{@short},#S}},,#[fg=colour252]#{E:@slug}#[default] }"
 # The window list only earns its space when a session has more than one
 # window; with one it would just repeat the pane's process title (claude's
 # version number).
@@ -73,11 +76,11 @@ set -g window-status-current-format "#{?#{==:#{session_windows},1},,#I:#W#{?wind
 set -g status-right-length 120
 # One entry per session, sorted by name; the second branch renders the current
 # session (dim — its badge is already on the left). `fut-` is stripped to fit.
-set -g status-right        "#{S/n:#[fg=#{?#{==:#{@agent},waiting},colour214#,bold,#{?#{==:#{@agent},done},colour71,#{?#{==:#{@agent},working},colour39,colour244}}}]#{s/fut-//:#{?#{@short},#{@short},#{session_name}}}#{?#{==:#{@agent},waiting},◆,#{?#{==:#{@agent},done},✓,#{?#{==:#{@agent},working},●,}}}#[default] ,#[fg=colour240]#{s/fut-//:#{?#{@short},#{@short},#{session_name}}}#[default] }"
+set -g status-right        "#{S/n:#[fg=#{?#{==:#{@agent},waiting},colour214#,bold,#{?#{==:#{@agent},done},colour71,#{?#{==:#{@agent},working},colour39,#{?#{==:#{@agent},background},colour117,colour244}}}}]#{s/fut-//:#{?#{@short},#{@short},#{session_name}}}#{?#{==:#{@agent},waiting},◆,#{?#{==:#{@agent},done},✓,#{?#{==:#{@agent},working},●,#{?#{==:#{@agent},background},◌,}}}}#[default] ,#[fg=colour240]#{s/fut-//:#{?#{@short},#{@short},#{session_name}}}#[default] }"
 set -g window-status-current-style "fg=colour39,bold"
 
 # Session picker: zoomed, sessions collapsed, agent state next to the label.
-bind s choose-tree -Zs -O name -F "#{?#{==:#{@agent},waiting},#[fg=colour214]◆ waiting ,#{?#{==:#{@agent},done},#[fg=colour71]✓ done    ,#{?#{==:#{@agent},working},#[fg=colour39]● working ,          }}}#[default]#{?#{@short},#{@short},#{session_name}}"
+bind s choose-tree -Zs -O name -F "#{?#{==:#{@agent},waiting},#[fg=colour214]◆ waiting ,#{?#{==:#{@agent},done},#[fg=colour71]✓ done    ,#{?#{==:#{@agent},working},#[fg=colour39]● working ,#{?#{==:#{@agent},background},#[fg=colour117]◌ external,          }}}}#[default]#{?#{@short},#{@short},#{session_name}}"
 
 # ── Plugins (tpm) ──────────────────────────────────────────────────
 # Reboot survival. resurrect restores session/window/pane structure,

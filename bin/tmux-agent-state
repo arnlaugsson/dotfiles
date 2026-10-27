@@ -10,13 +10,19 @@
 #                                       PreToolUse on AskUserQuestion
 #   tmux-agent-state resume             PostToolUse: waiting -> working once
 #                                       the prompt is answered
-#   tmux-agent-state done               Stop
+#   tmux-agent-state done               Stop: `background` instead while a
+#                                       sub-agent / background command /
+#                                       Monitor / ScheduleWakeup is in flight
+#                                       (tmux-agent-pending), and while the
+#                                       branch's PR awaits CodeRabbit
+#                                       (tmux-agent-prwatch, which flips it to
+#                                       done when the review lands)
 #   tmux-agent-state clear              SessionStart, SessionEnd
 #
 # Outside tmux it does nothing, so other terminals and projects are untouched.
 # It must never fail or slow the agent down: every path exits 0.
 
-cat >/dev/null 2>&1   # drain the hook's JSON payload; unused
+payload=$(cat 2>/dev/null)   # the hook's JSON; only `done` reads it
 
 [[ -n ${TMUX_PANE:-} ]] || exit 0
 
@@ -24,8 +30,17 @@ session=$(tmux display-message -p -t "$TMUX_PANE" '#{session_id}' 2>/dev/null) |
 [[ -n $session ]] || exit 0
 
 case "${1:-}" in
-  working|waiting|done)
+  working|waiting)
     tmux set-option -q -t "$session" @agent "$1" ;;
+  done)
+    transcript=$(jq -r '.transcript_path // empty' <<<"$payload" 2>/dev/null)
+    cwd=$(jq -r '.cwd // empty' <<<"$payload" 2>/dev/null)
+    if [[ -n $transcript ]] && tmux-agent-pending "$transcript"; then
+      tmux set-option -q -t "$session" @agent background
+    else
+      tmux set-option -q -t "$session" @agent done
+      [[ -n $cwd ]] && nohup tmux-agent-prwatch "$session" "$cwd" >/dev/null 2>&1 &
+    fi ;;
   resume)
     # PostToolUse fires constantly; only act when leaving a prompt.
     [[ $(tmux show-options -qv -t "$session" @agent) == waiting ]] || exit 0

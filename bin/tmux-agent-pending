@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Exit 0 if the Claude Code session whose transcript is argv[1] still has
+background work in flight when its turn ends, else exit 1.
+
+Called by `tmux-agent-state done` (the Stop hook) so a turn that ends while
+waiting on a sub-agent, a background command, a Monitor or a ScheduleWakeup
+(e.g. babysitting a CodeRabbit review) shows as `background` (blue), not
+`done` (green).
+
+In flight means:
+  - a task launched by a tool result (async Agent, Bash run_in_background,
+    Monitor) with no later <task-notification> ending it and no TaskStop, or
+  - a ScheduleWakeup whose fire time has not yet passed.
+
+Launches older than MAX_AGE are ignored, so a crashed or abandoned session
+never stays blue forever. Any error means "not pending": the caller falls
+back to plain `done`.
+"""
+import json
+import re
+import sys
+from datetime import datetime, timezone
+
+MAX_AGE = 4 * 3600      # seconds; longest a launch can keep the badge blue
+WAKE_SLACK = 120        # seconds past a wakeup's fire time before giving up
+
+LAUNCH = [
+    re.compile(r"Async agent launched successfully.*?agentId: (\w+)", re.S),
+    re.compile(r"running in background with ID: (\w+)"),
+    re.compile(r"moved to the background \(ID: (\w+)\)"),
+    re.compile(r"Monitor started \(task (\w+)"),
+]
+STOPPED = re.compile(r"Successfully stopped task: (\w+)")
+NOTIF = re.compile(
+    r"<task-notification>.*?<task-id>(\w+)</task-id>.*?<status>(\w+)</status>", re.S
+)
+
+
+def ts(entry):
+    try:
+        return datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
+def text_of(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            text_of(c.get("content")) if c.get("type") == "tool_result" else c.get("text", "")
+            for c in content
+            if isinstance(c, dict)
+        )
+    return ""
+
+
+def main(path):
+    now = datetime.now(timezone.utc).timestamp()
+    launched = {}       # task id -> launch time
+    spawners = set()    # tool_use ids of Agent / Bash / Monitor calls
+    wake_at = None      # fire time of the latest ScheduleWakeup
+
+    with open(path, errors="ignore") as f:
+        for line in f:
+            if '"api-request' in line[:40]:
+                continue
+            if not any(k in line for k in ('"tool_use"', "background", "Async agent", "Monitor started",
+                                           "task-notification", "stopped task", "ScheduleWakeup")):
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            t = ts(e) or now
+            msg = e.get("message")
+            if e.get("type") == "assistant" and isinstance(msg, dict):
+                for c in msg.get("content") or []:
+                    if c.get("type") == "tool_use" and c.get("name") in ("Agent", "Task", "Bash", "Monitor"):
+                        spawners.add(c.get("id"))
+                    if c.get("type") == "tool_use" and c.get("name") == "ScheduleWakeup":
+                        inp = c.get("input") or {}
+                        wake_at = None if inp.get("stop") else t + float(inp.get("delaySeconds") or 0)
+                continue
+            text = text_of(msg.get("content")) if isinstance(msg, dict) else text_of(e.get("content"))
+            # Only the result of a spawning call counts as a launch, matched at
+            # its start: anything else (a grep, a quoted log) may merely mention one.
+            if e.get("type") == "user" and isinstance(msg, dict) and isinstance(msg.get("content"), list):
+                for c in msg["content"]:
+                    if isinstance(c, dict) and c.get("type") == "tool_result" and c.get("tool_use_id") in spawners:
+                        head = text_of(c.get("content"))[:400]
+                        for rx in LAUNCH:
+                            m = rx.match(head) or rx.search(head[:200])
+                            if m:
+                                launched[m.group(1)] = t
+            for m in STOPPED.finditer(text):
+                launched.pop(m.group(1), None)
+            for tid, status in NOTIF.findall(text):
+                if status != "running":
+                    launched.pop(tid, None)
+
+    if any(now - t < MAX_AGE for t in launched.values()):
+        return 0
+    if wake_at is not None and now < wake_at + WAKE_SLACK:
+        return 0
+    return 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1]))
+    except Exception:
+        sys.exit(1)

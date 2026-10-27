@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# tmux-agent-prwatch SESSION_ID DIR
+#
+# Started detached by `tmux-agent-state done`. If the open PR for DIR's branch
+# has a CodeRabbit check still running, mark the session `background` (blue
+# ◌) and poll until it finishes, then flip it to `done` (green ✓). It only
+# ever moves background -> done; a new prompt (working) or a question
+# (waiting) ends the watch untouched.
+#
+# One watcher per session: the pid is kept in the session option @agent_watch.
+
+session=$1 dir=$2
+[[ -n $session && -d $dir ]] || exit 0
+cd "$dir" || exit 0
+
+old=$(tmux show-options -qv -t "$session" @agent_watch)
+[[ -n $old ]] && kill "$old" 2>/dev/null
+tmux set-option -q -t "$session" @agent_watch $$
+trap '[[ $(tmux show-options -qv -t "$session" @agent_watch) == $$ ]] && tmux set-option -q -u -t "$session" @agent_watch' EXIT
+
+repaint() {
+  for c in $(tmux list-clients -F '#{client_name}' 2>/dev/null); do
+    tmux refresh-client -S -t "$c" 2>/dev/null
+  done
+}
+
+# 0 while a CodeRabbit check on this branch's open PR is queued or running.
+coderabbit_pending() {
+  gh pr view --json state,statusCheckRollup --jq '
+    .state == "OPEN" and any(.statusCheckRollup[];
+      ((.name // .context) | test("coderabbit"; "i"))
+      and ((.status // "") | test("QUEUED|IN_PROGRESS|PENDING|WAITING|REQUESTED")
+           or (.state // "") == "PENDING"))' 2>/dev/null | grep -qx true
+}
+
+coderabbit_pending || exit 0
+case $(tmux show-options -qv -t "$session" @agent) in
+  done|background) tmux set-option -q -t "$session" @agent background; repaint ;;
+  *) exit 0 ;;
+esac
+
+for _ in $(seq 60); do           # give up after an hour
+  sleep 60
+  [[ $(tmux show-options -qv -t "$session" @agent 2>/dev/null) == background ]] || exit 0
+  coderabbit_pending && continue
+  break
+done
+[[ $(tmux show-options -qv -t "$session" @agent 2>/dev/null) == background ]] &&
+  tmux set-option -q -t "$session" @agent done
+repaint
+exit 0
