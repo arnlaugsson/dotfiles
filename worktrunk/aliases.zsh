@@ -6,14 +6,63 @@
 #   wts fut-590-new-thing        branch is new  -> wt switch --create
 #   wts arnlaugsson/fut-506-bug  branch exists  -> wt switch
 #   wts                          no arg         -> worktrunk's picker
+#   wts FUT-672                  ticket id      -> its branch: an existing local/origin
+#                                                  branch for the ticket, else Linear's
+#                                                  gitBranchName (needs LINEAR_API_KEY,
+#                                                  e.g. exported from ~/.localrc)
 #
 # Session name is the full branch, sanitised for tmux (which rejects "." and ":").
 # A short label (e.g. fut-506) is stashed on the session as @short for the
 # status bar; see ~/.tmux.conf.
 
+# Print the branch for a ticket id (FUT-672). A branch that already exists wins,
+# so resuming work never depends on Linear (or on its name never having changed).
+# Only a branch with a slug after the id counts: a bare `FUT-999` branch is the
+# leftover of a `wts FUT-999` run before this resolver existed, never real work.
+_wts_ticket_branch() {
+  emulate -L zsh
+  local id=${(L)1}
+
+  local -a found
+  found=(${(u)${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin 2>/dev/null \
+    | sed 's#^origin/##' | grep -iE "(^|/)${id}-")"}})
+  if (( $#found == 1 )); then
+    print -r -- $found[1]; return 0
+  elif (( $#found > 1 )); then
+    print -u2 "wts: several branches match ${(U)id} — pass one explicitly:"
+    print -u2 -l -- "  "${^found}
+    return 1
+  fi
+
+  [[ -n $LINEAR_API_KEY ]] || {
+    print -u2 "wts: no branch for ${(U)id} yet and LINEAR_API_KEY is unset — export it (e.g. in ~/.localrc) or pass the branch name"
+    return 1
+  }
+  local resp name
+  resp=$(curl -fsS --max-time 10 https://api.linear.app/graphql \
+    -H 'Content-Type: application/json' -H "Authorization: $LINEAR_API_KEY" \
+    -d "{\"query\":\"{ issue(id: \\\"${(U)id}\\\") { branchName } }\"}") || {
+    print -u2 "wts: Linear request failed for ${(U)id}"; return 1
+  }
+  name=$(print -r -- "$resp" | jq -r '.data.issue.branchName // empty')
+  [[ -n $name ]] || {
+    print -u2 "wts: Linear has no branch name for ${(U)id}: $(print -r -- "$resp" | jq -c '.errors // .' 2>/dev/null)"
+    return 1
+  }
+  print -r -- $name
+}
+
 wts() {
   emulate -L zsh
   setopt local_options
+
+  # A bare ticket id (FUT-672, fut-672) stands for that ticket's branch.
+  if [[ $1 =~ '^[A-Za-z]+-[0-9]+$' ]]; then
+    local resolved
+    resolved=$(_wts_ticket_branch "$1") || return $?
+    print -u2 "wts: ${(U)1} -> $resolved"
+    set -- "$resolved" "${@:2}"
+  fi
 
   local branch=$1
   local is_shortcut=0
